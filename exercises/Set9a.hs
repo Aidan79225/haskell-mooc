@@ -13,7 +13,7 @@ module Set9a where
 import Data.Char
 import Data.List
 import Data.Ord
-
+import qualified Data.Map as Map
 import Mooc.Todo
 
 ------------------------------------------------------------------------------
@@ -26,7 +26,13 @@ import Mooc.Todo
 -- Otherwise return "Ok."
 
 workload :: Int -> Int -> String
-workload nExercises hoursPerExercise = todo
+workload nExercises hoursPerExercise
+  | totalHours > 100 = "Holy moly!"
+  | totalHours < 10 = "Piece of cake!"
+  | otherwise = "Ok."
+  where totalHours = nExercises * hoursPerExercise
+                                       
+
 
 ------------------------------------------------------------------------------
 -- Ex 2: Implement the function echo that builds a string like this:
@@ -39,7 +45,9 @@ workload nExercises hoursPerExercise = todo
 -- Hint: use recursion
 
 echo :: String -> String
-echo = todo
+echo s = go "" s
+  where go cur [] = cur
+        go cur s = go (cur ++ s ++ ", ") (tail s)
 
 ------------------------------------------------------------------------------
 -- Ex 3: A country issues some banknotes. The banknotes have a serial
@@ -52,7 +60,14 @@ echo = todo
 -- are valid.
 
 countValid :: [String] -> Int
-countValid = todo
+countValid [] = 0
+countValid (s:ss) = if (a == b) || (c == d) then 1 + countValid ss
+                    else countValid ss
+                    where a = head (tail (tail s))
+                          b = head (tail (tail (tail (tail s))))
+                          c = head (tail (tail (tail s)))
+                          d = head (tail (tail (tail (tail (tail s)))))
+
 
 ------------------------------------------------------------------------------
 -- Ex 4: Find the first element that repeats two or more times _in a
@@ -63,9 +78,14 @@ countValid = todo
 --   repeated [1,2,2,3,3] ==> Just 2
 --   repeated [1,2,1,2,3,3] ==> Just 3
 
-repeated :: Eq a => [a] -> Maybe a
-repeated = todo
-
+repeated :: (Ord a, Eq a) => [a] -> Maybe a
+repeated a = check a Map.empty
+               where check [] _ = Nothing
+                     check (k:ks) mp = case Map.lookup k mp of
+                                         Nothing -> check ks nmp
+                                         Just v -> if v >= 1 then Just k
+                                                   else check ks nmp
+                                         where nmp = Map.insertWith (+) k 1 mp
 ------------------------------------------------------------------------------
 -- Ex 5: A laboratory has been collecting measurements. Some of the
 -- measurements have failed, so the lab is using the type
@@ -86,7 +106,11 @@ repeated = todo
 --     ==> Left "no data"
 
 sumSuccess :: [Either String Int] -> Either String Int
-sumSuccess = todo
+sumSuccess [] = Left "no data"
+sumSuccess (Right l: es) = case sumSuccess es of
+                             Right r -> Right (l+r)
+                             Left _ -> Right l
+sumSuccess (Left _: es) = sumSuccess es
 
 ------------------------------------------------------------------------------
 -- Ex 6: A combination lock can either be open or closed. The lock
@@ -108,30 +132,34 @@ sumSuccess = todo
 --   isOpen (open "0000" (lock (changeCode "0000" (open "1234" aLock)))) ==> True
 --   isOpen (open "1234" (lock (changeCode "0000" (open "1234" aLock)))) ==> False
 
-data Lock = LockUndefined
+data Lock = OpenedLock String | ClosedLock String
   deriving Show
 
 -- aLock should be a locked lock with the code "1234"
 aLock :: Lock
-aLock = todo
+aLock = ClosedLock "1234"
 
 -- isOpen returns True if the lock is open
 isOpen :: Lock -> Bool
-isOpen = todo
+isOpen (OpenedLock _) = True
+isOpen _ = False
 
 -- open tries to open the lock with the given code. If the code is
 -- wrong, nothing happens.
 open :: String -> Lock -> Lock
-open = todo
-
+open pw (ClosedLock code) = if pw == code then OpenedLock code
+                            else ClosedLock code
+open pw (OpenedLock code) = OpenedLock code
 -- lock closes a lock. If the lock is already closed, nothing happens.
 lock :: Lock -> Lock
-lock = todo
+lock (OpenedLock code) = ClosedLock code
+lock (ClosedLock code) = ClosedLock code
 
 -- changeCode changes the code of an open lock. If the lock is closed,
 -- nothing happens.
 changeCode :: String -> Lock -> Lock
-changeCode = todo
+changeCode newCode (OpenedLock code) = OpenedLock newCode
+changeCode newCode (ClosedLock code) = ClosedLock code
 
 ------------------------------------------------------------------------------
 -- Ex 7: Here's a type Text that just wraps a String. Implement an Eq
@@ -149,6 +177,13 @@ changeCode = todo
 data Text = Text String
   deriving Show
 
+instance Eq Text where
+  (==) (Text a) (Text b) = trim a "" == trim b ""
+                           where  trim [] cur = cur
+                                  trim (a:as) cur
+                                   | Data.Char.isSpace a = trim as cur
+                                   | otherwise = trim as (cur ++ [a])
+                           
 
 ------------------------------------------------------------------------------
 -- Ex 8: We can represent functions or mappings as lists of pairs.
