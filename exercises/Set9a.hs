@@ -216,8 +216,13 @@ instance Eq Text where
 --     compose [("a","alpha"),("b","beta"),("c","gamma")] [("alpha",1),("beta",2),("omicron",15)]
 --       ==> [("a",1),("b",2)]
 
-compose :: (Eq a, Eq b) => [(a,b)] -> [(b,c)] -> [(a,c)]
-compose = todo
+compose :: (Eq a, Eq b, Ord b) => [(a,b)] -> [(b,c)] -> [(a,c)]
+compose a b = let mp = Map.fromList b
+                  go [] mp = []
+                  go ((k, v):as) mp = case Map.lookup v mp of
+                                        Nothing -> go as mp
+                                        Just bv -> ((k, bv): go as mp)
+              in go a mp
 
 ------------------------------------------------------------------------------
 -- Ex 9: Reorder a list using a list of indices.
@@ -261,4 +266,12 @@ multiply :: Permutation -> Permutation -> Permutation
 multiply p q = map (\i -> p !! (q !! i)) (identity (length p))
 
 permute :: Permutation -> [a] -> [a]
-permute = todo
+permute p v = let n = length p
+                  l = build p v
+                  build [] [] = []
+                  build (p:ps) (v:vs) = ((p, v): build ps vs)
+                  mp = Map.fromList l
+                  go idx n mp = case Map.lookup idx mp of
+                                  Nothing -> []
+                                  Just v -> (v: go (idx+1) n mp)
+              in go 0 n mp
