@@ -21,12 +21,15 @@ import Data.Text.Encoding (encodeUtf8)
 import Text.Read (readMaybe)
 
 -- HTTP server
-import Network.Wai (pathInfo, responseLBS, Application)
+import Network.Wai (pathInfo, responseLBS, Application, Response)
 import Network.Wai.Handler.Warp (run)
-import Network.HTTP.Types (status200)
+import Network.HTTP.Types (status200, status404, Status)
 
 -- Database
-import Database.SQLite.Simple (open,execute,execute_,query,query_,Connection,Query(..))
+import Database.SQLite.Simple (open,execute,execute_,query,query_,Connection,Query(..),fromOnly)
+import qualified GHC.Real as T
+import GHC.Num (integerToInt)
+import qualified Data.String as LB
 
 ------------------------------------------------------------------------------
 -- Ex 1: Let's start with implementing some database operations. The
@@ -73,12 +76,15 @@ getAllQuery = Query (T.pack "SELECT account, amount FROM events;")
 -- openDatabase should open an SQLite database using the given
 -- filename, run initQuery on it, and produce a database Connection.
 openDatabase :: String -> IO Connection
-openDatabase = todo
+openDatabase name = do
+    connection <- open name
+    execute_ connection initQuery
+    return connection
 
 -- given a db connection, an account name, and an amount, deposit
 -- should add an (account, amount) row into the database
 deposit :: Connection -> T.Text -> Int -> IO ()
-deposit = todo
+deposit connection account amount= execute connection depositQuery (account, amount)
 
 ------------------------------------------------------------------------------
 -- Ex 2: Fetching an account's balance. Below you'll find
@@ -109,7 +115,10 @@ balanceQuery :: Query
 balanceQuery = Query (T.pack "SELECT amount FROM events WHERE account = ?;")
 
 balance :: Connection -> T.Text -> IO Int
-balance = todo
+balance connection account = do
+    rows <- query connection balanceQuery [account]
+    let amounts = map fromOnly rows
+    return (sum amounts)
 
 ------------------------------------------------------------------------------
 -- Ex 3: Now that we have the database part covered, let's think about
@@ -148,7 +157,18 @@ parseInt :: T.Text -> Maybe Int
 parseInt = readMaybe . T.unpack
 
 parseCommand :: [T.Text] -> Maybe Command
-parseCommand = todo
+parseCommand [] = Nothing
+parseCommand (c:[]) = Nothing
+parseCommand (c:account:ts) = case T.unpack c of
+    "balance" -> if null ts then Just (Balance account)
+                            else Nothing
+    "deposit" -> if length ts /= 1 then Nothing
+                                   else case readMaybe (T.unpack (head ts)) of
+                                          Nothing -> Nothing
+                                          Just amount -> Just (Deposit account amount)
+    _ -> Nothing
+
+    
 
 ------------------------------------------------------------------------------
 -- Ex 4: Running commands. Implement the IO operation perform that takes a
@@ -174,8 +194,9 @@ parseCommand = todo
 --   "0"
 
 perform :: Connection -> Maybe Command -> IO T.Text
-perform = todo
-
+perform connection (Just (Balance account)) = balance connection account >>= (\amount -> return $ T.pack $ show amount)
+perform connection (Just (Deposit account amount)) = deposit connection account amount >>= (\amount -> return $ T.pack $ "OK")
+perform connection Nothing = return (T.pack "ERROR")
 ------------------------------------------------------------------------------
 -- Ex 5: Next up, let's set up a simple HTTP server. Implement a WAI
 -- Application simpleServer that always responds with a HTTP status
@@ -194,7 +215,8 @@ encodeResponse t = LB.fromStrict (encodeUtf8 t)
 -- Remember:
 -- type Application = Request -> (Response -> IO ResponseReceived) -> IO ResponseReceived
 simpleServer :: Application
-simpleServer request respond = todo
+simpleServer request respond = respond (responseLBS status200 [] (LB.fromString "BANK"))
+    
 
 ------------------------------------------------------------------------------
 -- Ex 6: Now we finally have all the pieces we need to actually
@@ -222,8 +244,44 @@ simpleServer request respond = todo
 
 -- Remember:
 -- type Application = Request -> (Response -> IO ResponseReceived) -> IO ResponseReceived
+makeResponse :: Status -> T.Text -> Response
+makeResponse status text =
+  responseLBS status [] (LB.fromStrict (encodeUtf8 text))
+
+serveBalance :: Connection -> [T.Text] -> IO Response
+serveBalance db (account:[]) = 
+    do 
+      res <- perform db (Just (Balance account))
+      return $ makeResponse status200 res
+serveBalance db _ = serveNotFound
+
+serveDeposit :: Connection -> [T.Text] -> Int -> IO Response
+serveDeposit db (account:tamount:[]) sign = 
+  case readMaybe $ T.unpack tamount of
+      Nothing -> serveNotFound
+      Just amount -> do 
+        res <- perform db (Just (Deposit account (amount*sign)))
+        return $ makeResponse status200 res
+serveDeposit db _ sign = serveNotFound
+
+serveNotFound :: IO Response
+serveNotFound = return $ makeResponse status404 (T.pack "ERROR")
+  
+
+servePath :: Connection -> [T.Text] -> IO Response
+servePath db [] = serveNotFound
+servePath db (c:path)
+  | T.unpack c == "deposit" = serveDeposit db path 1
+  | T.unpack c == "balance" = serveBalance db path
+  | T.unpack c == "withdraw" = serveDeposit db path (-1)
+  | otherwise = serveNotFound
+
 server :: Connection -> Application
-server db request respond = todo
+server db request respond = do
+    let path = pathInfo request
+    response <- servePath db path
+    respond response
+
 
 port :: Int
 port = 3421
