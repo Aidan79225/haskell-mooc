@@ -2,3 +2,5 @@
 *.lock
 .stack-work
 score.json
+exercises/dist-newstyle/
+exercises/score.json
